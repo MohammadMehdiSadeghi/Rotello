@@ -36,15 +36,26 @@ function writeLocalMembers(data: Record<string, string[]>) {
   }
 }
 
+function getSafeAdminClient() {
+  try {
+    return createAdminClient()
+  } catch {
+    return null
+  }
+}
+
 async function getAllProfiles(): Promise<Profile[]> {
   const cached = getCachedMembers()
   if (cached) return cached
 
-  const admin = createAdminClient()
-  const [profilesRes, usersRes] = await Promise.all([
-    admin.from('profiles').select('*').order('xp_total', { ascending: false }),
-    admin.auth.admin.listUsers({ page: 1, perPage: 1000 }),
-  ])
+  const admin = getSafeAdminClient()
+  if (!admin) return []
+
+  try {
+    const [profilesRes, usersRes] = await Promise.all([
+      admin.from('profiles').select('*').order('xp_total', { ascending: false }),
+      admin.auth.admin.listUsers({ page: 1, perPage: 1000 }),
+    ])
 
   const authUsersMap = new Map<
     string,
@@ -67,23 +78,27 @@ async function getAllProfiles(): Promise<Profile[]> {
     }
   }
 
-  return (profilesRes.data || []).map((p) => {
-    const authInfo = authUsersMap.get(p.id)
-    return {
-      ...p,
-      full_name: authInfo?.full_name || p.full_name || '',
-      role: (authInfo?.role || p.role || 'member') as Role,
-      departments: authInfo?.departments || p.departments || [],
-      avatar_url: authInfo?.avatar_url || p.avatar_url || null,
-    }
-  })
+    return (profilesRes.data || []).map((p) => {
+      const authInfo = authUsersMap.get(p.id)
+      return {
+        ...p,
+        full_name: authInfo?.full_name || p.full_name || '',
+        role: (authInfo?.role || p.role || 'member') as Role,
+        departments: authInfo?.departments || p.departments || [],
+        avatar_url: authInfo?.avatar_url || p.avatar_url || null,
+      }
+    })
+  } catch {
+    return []
+  }
 }
 
 /**
  * Ensures a project has a roster task in Supabase to persist explicit project member associations.
  */
 async function getOrCreateRosterTask(projectId: string): Promise<string | null> {
-  const admin = createAdminClient()
+  const admin = getSafeAdminClient()
+  if (!admin) return null
   try {
     // 1. Check if roster task already exists
     const { data: existing } = await admin
@@ -148,11 +163,12 @@ async function getOrCreateRosterTask(projectId: string): Promise<string | null> 
  * Get all member profiles assigned to a project.
  */
 export async function getProjectMembers(projectId: string): Promise<Profile[]> {
-  const admin = createAdminClient()
+  const admin = getSafeAdminClient()
   const memberIdSet = new Set<string>()
 
-  // 1. Try Supabase project_members table if available
-  try {
+  if (admin) {
+    // 1. Try Supabase project_members table if available
+    try {
     const { data, error } = await admin
       .from('project_members')
       .select('user_id')
@@ -185,6 +201,7 @@ export async function getProjectMembers(projectId: string): Promise<Profile[]> {
     }
   } catch (err) {
     console.error('Error fetching tasks/assignees for project:', err)
+  }
   }
 
   // 3. Fallback / merge with local JSON store
@@ -224,10 +241,11 @@ export async function getProjectMembers(projectId: string): Promise<Profile[]> {
  * Add a member to a project.
  */
 export async function addProjectMember(projectId: string, userId: string): Promise<boolean> {
-  const admin = createAdminClient()
+  const admin = getSafeAdminClient()
 
-  // 1. Try Supabase project_members table
-  try {
+  if (admin) {
+    // 1. Try Supabase project_members table
+    try {
     await admin
       .from('project_members')
       .insert({ project_id: projectId, user_id: userId })
@@ -256,6 +274,7 @@ export async function addProjectMember(projectId: string, userId: string): Promi
   } catch (err) {
     console.error('Error assigning member to roster task:', err)
   }
+  }
 
   // 3. Sync to local store backup
   try {
@@ -276,10 +295,11 @@ export async function addProjectMember(projectId: string, userId: string): Promi
  * Remove a member from a project.
  */
 export async function removeProjectMember(projectId: string, userId: string): Promise<boolean> {
-  const admin = createAdminClient()
+  const admin = getSafeAdminClient()
 
-  // 1. Try Supabase project_members table
-  try {
+  if (admin) {
+    // 1. Try Supabase project_members table
+    try {
     await admin
       .from('project_members')
       .delete()
@@ -307,6 +327,7 @@ export async function removeProjectMember(projectId: string, userId: string): Pr
   } catch (err) {
     console.error('Error removing member from task_assignees:', err)
   }
+  }
 
   // 3. Remove from local store backup
   try {
@@ -326,11 +347,12 @@ export async function removeProjectMember(projectId: string, userId: string): Pr
  * Get member IDs for all projects in bulk (useful for project listing and cards).
  */
 export async function getAllProjectMemberIds(): Promise<Record<string, string[]>> {
-  const admin = createAdminClient()
   const map: Record<string, Set<string>> = {}
+  const admin = getSafeAdminClient()
 
-  // 1. Query projects, tasks, and task_assignees to derive all members reliably
-  try {
+  if (admin) {
+    // 1. Query projects, tasks, and task_assignees to derive all members reliably
+    try {
     const [projectsRes, tasksRes, assigneesRes] = await Promise.all([
       admin.from('projects').select('id'),
       admin.from('tasks').select('id, project_id'),
@@ -377,6 +399,7 @@ export async function getAllProjectMemberIds(): Promise<Record<string, string[]>
     }
   } catch {
     // Ignore
+  }
   }
 
   // 3. Merge local store backup

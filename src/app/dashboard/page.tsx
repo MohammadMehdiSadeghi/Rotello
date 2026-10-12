@@ -412,11 +412,6 @@ export default function DashboardPage() {
                           {req.requester?.full_name || 'عضو باشگاه'}
                         </span>
                       </div>
-                      {req.suggested_xp && (
-                        <span className="rounded-md bg-amber-500/10 text-amber-500 px-1.5 py-0.5 text-[10px] font-bold border border-amber-500/20 shrink-0">
-                          {toPersianDigits(req.suggested_xp)} XP
-                        </span>
-                      )}
                     </div>
                     <div className="text-xs font-semibold text-default truncate" title={req.title}>
                       {req.title}

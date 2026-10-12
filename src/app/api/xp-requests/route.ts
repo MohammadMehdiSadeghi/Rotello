@@ -97,14 +97,26 @@ export async function GET(request: Request) {
     const projIdsArray = Array.from(projectIds)
     if (projIdsArray.length > 0) {
       try {
-        const { data: projectsData } = await dbClient
+        let { data: projectsData, error: projErr } = await dbClient
           .from('projects')
-          .select('id, name, department')
+          .select('*')
           .in('id', projIdsArray)
+
+        if (projErr) {
+          const fallback = await dbClient
+            .from('projects')
+            .select('id, name')
+            .in('id', projIdsArray)
+          projectsData = fallback.data
+        }
 
         if (projectsData) {
           for (const proj of projectsData) {
-            projectsMap.set(proj.id, proj)
+            projectsMap.set(proj.id, {
+              id: proj.id,
+              name: proj.name,
+              department: (proj.department as string) || null,
+            })
           }
         }
       } catch {

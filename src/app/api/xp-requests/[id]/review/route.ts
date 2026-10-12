@@ -241,12 +241,28 @@ export async function POST(
     let enrichedProject = null
     if (updatedReq?.project_id) {
       try {
-        const { data: projData } = await adminClient
+        let { data: projData, error: projErr } = await adminClient
           .from('projects')
-          .select('id, name, department')
+          .select('*')
           .eq('id', updatedReq.project_id)
           .single()
-        enrichedProject = projData || null
+
+        if (projErr) {
+          const fallback = await adminClient
+            .from('projects')
+            .select('id, name')
+            .eq('id', updatedReq.project_id)
+            .single()
+          projData = fallback.data
+        }
+
+        if (projData) {
+          enrichedProject = {
+            id: projData.id,
+            name: projData.name,
+            department: (projData.department as string) || null,
+          }
+        }
       } catch {
         // ignore
       }
